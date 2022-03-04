@@ -7,7 +7,14 @@
 R2-scripts.Rproj
 
 
+#VScode
+.vscode
+
+
 # Python user files/folders to be ignored
+*.pyc
+**/.ipynb_checkpoints
+**/__pycache__
 
 
 # Matlab user files/folders to be ignored
