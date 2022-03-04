@@ -1,0 +1,23 @@
+# This file contains basic shared information for downloading and plotting data for RECCAP2
+
+colors:
+  # Global ocean biogeochemical models
+  models: "#519E3E"
+  # assimilation models - separate colors as may be quite different
+  bsose: "#696969"
+  ecco: "#A9A9A9"
+  # data-based products (machine learning etc.)
+  dataprods: "#3B75AF"
+  # watson includes a skin-temperature correction that increases oceanic uptake
+  watson: "#B4C3DC"
+  # From the Bushinsky model - includes SOCCOM floats (only for Southern Ocean)
+  soccom: "#4D448A"
+  # atmospheric inversions
+  atminv: "#8D69B8"
+
+
+# this might change based on journal requirements
+figwidth: 
+  single: 4.5  # inches
+  double: 7.5  # inches
+
