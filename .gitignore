@@ -2,4 +2,12 @@
 .Rhistory
 .RData
 .Ruserdata
+
+# R/RStudio user files/folders to be ignored
 R2-scripts.Rproj
+
+
+# Python user files/folders to be ignored
+
+
+# Matlab user files/folders to be ignored
