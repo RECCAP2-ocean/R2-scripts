@@ -1,8 +1,12 @@
 from . import maps
+from .read_plotrc import read_plotrc
 
-import yaml as _yaml
 
-_config = _yaml.load(open('../../reccap2ocean.yaml'), Loader=_yaml.SafeLoader)
-colors = _config['colors']
-figw1 = _config['figwidth']['single']
-figw2 = _config['figwidth']['double']
+try:
+    rc = read_plotrc()
+    c = rc.colors
+    fw1 = rc.figwidth.single
+    fw2 = rc.figwidth.double
+except UnboundLocalError:
+    print('rc not loaded')
+    pass
