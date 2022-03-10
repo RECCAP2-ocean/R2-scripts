@@ -33,7 +33,7 @@ filterwarnings('ignore', category=FutureWarning)
 ###############################
 ## RECCAP SPECIFIC FUNCTIONS ##
 ###############################
-def get_fnames_recursive_search(basedir, patterns=[], exclude=[]):
+def get_fnames_recursive_search(basedir, include=[], exclude=[]):
     """
     Search and match file names in a directory (recursive)
     
@@ -41,7 +41,7 @@ def get_fnames_recursive_search(basedir, patterns=[], exclude=[]):
     ----------
     basedir: str (must exist as a path)
         the directory that you'd like to search through
-    patterns: list of str
+    include: list of str
         the string patterns that must occur in the files you're looking for
     exclude: list of str
         string patterns you would like to exclude from the filenames
@@ -56,7 +56,7 @@ def get_fnames_recursive_search(basedir, patterns=[], exclude=[]):
     flist = []
     for path, subdir, files in os.walk(basedir):
         for fname in files:
-            if all([p in fname for p in patterns]):
+            if all([p in fname for p in include]):
                 has_excluded = [s in fname for s in exclude]
                 if not any(has_excluded):
                     flist += os.path.join(path, fname),
@@ -65,7 +65,7 @@ def get_fnames_recursive_search(basedir, patterns=[], exclude=[]):
     return flist
 
 
-def open_reccap2_ocean_data(flist, rename_var_to_model=True, time_lim=slice('1980', '2018'), load_data=True):
+def open_reccap2_ocean_data(flist, time_lim=slice('1980', '2018'), load_data=True):
     """
     Open RECCAP2-ocean data as a merged netCDF file. 
     Can be used to open a multiple variables from a single model, 
@@ -75,9 +75,6 @@ def open_reccap2_ocean_data(flist, rename_var_to_model=True, time_lim=slice('198
     ---------
     flist: list
         A list of files you'd like to import
-    rename_var_to_model: bool
-        If you're loading a single variable, this must be set to True, 
-        if you're loading a single model, this must be set to False
     time_lim: slice
         Defaults to the RECCAP2-ocean model time period
         
@@ -87,7 +84,16 @@ def open_reccap2_ocean_data(flist, rename_var_to_model=True, time_lim=slice('198
     To load the data
     
     """
-    
+    def encoding_source_as_attr_fname(ds):
+        ds = ds.assign_coords(fname=ds.encoding['source'])
+        return ds
+
+    model_names = set([get_reccap_model_name_from_file_name(f) for f in flist])
+    if len(model_names) == 1:
+        rename_var_to_model = False
+    else:
+        rename_var_to_model = True
+
     data = []
     for f in flist:
         ds = xr.open_dataset(f, decode_times=False)
@@ -105,33 +111,34 @@ def open_reccap2_ocean_data(flist, rename_var_to_model=True, time_lim=slice('198
             da = get_array_if_only_var(ds_conform)
             # doing this chunking step makes sure that data isnt loaded 
             # when merging making the process a whole lot quicker
-            chunks = dict(time=468, depth=100, lat=180, lon=360)
-            chunks = {k: chunks[k] for k in chunks if k in da}
-            da = da.chunk(chunks)
+            if 'time' in da:
+                da = da.sel(time=time_lim)
+            if not load_data:
+                chunks = dict(time=1000, depth=1000, lat=1000, lon=1000)
+                chunks = {k: chunks[k] for k in chunks if k in da}
+                da = da.chunk(chunks)
+            else:
+                da = da.astype('float32').load()
             # see the docstring
-            if rename_var_to_model:
+            if rename_var_to_model and isinstance(da, xr.DataArray):
                 da = da.rename(ds_conform.model)
             data += da,
-    print('Merging files')
-    
-    ds = xr.merge(data, compat='override').astype('float32')
-    if 'time' in ds:
-        ds = ds.sel(time=time_lim)
-        
-    if load_data:
-        from dask.diagnostics import ProgressBar
-        with ProgressBar():
-            ds = ds.load()
-    return ds
+
+    print('Trying to merge files')
+    try:
+        ds = xr.merge(data, compat='override')
+        return ds
+    except Exception:
+        return data
 
 
-def get_reccap_model_name_from_file_name(ds):
+def get_reccap_model_name_from_file_name(fname):
     """
     Uses the file name to guess the RECCAP2 product name
     """
     
     name = (
-        ds.encoding['source']
+        fname
         # get the file name after the last /
         .split('/')[-1]
         # here are some fixes for models that have incorrect naming structure
@@ -159,7 +166,7 @@ def conform_dataset(
     Also adds the name of the model
     """
     
-    name = get_reccap_model_name_from_file_name(ds)
+    name = get_reccap_model_name_from_file_name(ds.encoding['source'])
     
     ds_out = (
         ds
@@ -172,8 +179,14 @@ def conform_dataset(
         .pipe(decode_times)
         .pipe(get_array_if_only_var)
         .assign_attrs(model=name, fname=ds.encoding['source'])
-        .to_dataset()
     )
+
+    if isinstance(ds_out, xr.DataArray):
+        ds_out = (
+            ds_out
+            .to_dataset()
+            .pipe(drop_redundant_coords))
+    
     ds_out = ds_out.assign_attrs(model=name)
     ds_out.encoding = ds.encoding
     
@@ -219,10 +232,6 @@ def check_reccap2_format(ds, verbose=False):
     else:
         name = ''
         
-#     if not has_coords(ds):
-#         vprint(f'coordinates missing')
-#         return 1
-    
     if 'lat' in ds:
         if spatial_coord(ds.lat):
             vprint(f'`lat` not centered on 0.5')
@@ -322,11 +331,13 @@ def decode_time_from_fname(ds):
         t = pd.date_range(f'{y0}-01-01', f'{y1}-12-31', freq='1AS')
         t += pd.Timedelta('14D')
         ds = ds.assign_coords(time=t)
+        ds = add_netcdf_hist(ds, "decoded times from years in file name")
         
     if nmonth == ds.time.size:
         t = pd.date_range(f'{y0}-01-01', f'{y1}-12-31', freq='1MS')
         t += pd.Timedelta('14D')
         ds = ds.assign_coords(time=t)
+        ds = add_netcdf_hist(ds, "decoded times from years in file name")
             
     return ds
     
@@ -343,6 +354,8 @@ def decode_time_standard(ds):
         ds = xr.decode_cf(ds)
         dt = np.timedelta64(14, 'D')
         ds = ds.assign_coords(time=ds.time.astype('datetime64[M]') + dt)
+        msg = "decoded times using xarray decoding and centered to the 15th of each month"
+        ds = add_netcdf_hist(ds, msg)
         return ds
 
 
@@ -391,6 +404,7 @@ def lon_0E_360E(ds, lon_name='lon'):
             ds
             .assign_coords(**{lon_name: lon360})
             .sortby(lon_name))
+        ds = add_netcdf_hist(ds, "shifted longitudes to 0:360")
         return ds
     else:
         return ds
@@ -423,6 +437,7 @@ def coord_05_offset(ds, center=0.5, coord_name='lon'):
         # use the modulus to determine if grid centers are correct
         if any(mod != center):
             ds = ds.interp({coord_name: coord + center})
+            ds = add_netcdf_hist(ds, f"interpolated {coord_name} to be centered on {center}")
             
     return ds
     
@@ -433,7 +448,8 @@ def transpose_dims(ds, default=['time', 'depth', 'lat', 'lon'], other_dims_befor
     Can specify if remaining dimensions should be ordered before 
     or after the default dimensions.
     """
-    dims = set(list(ds.dims))
+    old_order = list(ds.dims)
+    dims = set(old_order)
     default = [d for d in default if d in dims]
     default_set = set(default)
     other = dims - default_set
@@ -443,7 +459,11 @@ def transpose_dims(ds, default=['time', 'depth', 'lat', 'lon'], other_dims_befor
     else:
         new_order = list(default) + list(other)
     
-    ds = ds.transpose(*new_order)
+    matching = all([a==b for a,b in zip(ds.dims, new_order)])
+    if not matching:
+        ds = ds.transpose(*new_order)
+        msg = f"transposed dimensions: {old_order} --> {new_order}".replace("'", "")
+        ds = add_netcdf_hist(ds, msg)
     
     return ds
 
@@ -489,6 +509,8 @@ def correct_coord_names(
     
     if any(coord_renames):
         str_renames = str(coord_renames).replace("'", "").replace(':', ' -->')
+        msg = f"renamed coords: {str_renames}"
+        ds = add_netcdf_hist(ds, msg)
         ds = ds.rename(coord_renames)
     
     return ds
@@ -656,9 +678,9 @@ def fuzz_ratios(s, possible_matches, func=None):
 
 
 ######################
-## HELPER FUNCTIONS ## 
+## NETCDF FUNCTIONS ## 
 ######################
-def get_array_if_only_var(ds):
+def get_array_if_only_var(ds, keep_attr_name='processing'):
     """
     If a variable name is in the file name, then only that variable will be 
     returned. An xr.DataArray is returned (not a Dataset)
@@ -666,6 +688,11 @@ def get_array_if_only_var(ds):
     fpath = ds.encoding['source']
     fname = fpath.split('/')[-1]
     
+    if keep_attr_name in ds.attrs:
+        hist = ds.attrs[keep_attr_name]
+    else: 
+        hist = None
+
     data_vars = list(ds.data_vars)
     n_vars = len(data_vars)
     # if more than one data variable, return the variable that 
@@ -677,12 +704,55 @@ def get_array_if_only_var(ds):
                 ds = ds[var]
     if n_vars == 1:
         ds = ds[data_vars[0]]
+    
+    if hist is not None:
+        if isinstance(ds, xr.Dataset):
+            if len(ds.data_vars) == 1:
+                key = list(ds.data_vars)[0]
+                ds[key].attrs[keep_attr_name] = hist
+        elif isinstance(ds, xr.DataArray):
+            ds.attrs[keep_attr_name] = hist
         
     ds.encoding['source'] = fname
             
     return ds
 
 
+def drop_redundant_coords(ds):
+    dims_n_coords = set(list(ds.coords) + list(ds.dims))
+
+    dims = []
+    for k in ds:
+        dims += list(ds[k].dims)
+    dims = set(dims)
+
+    redundant_coords = list(dims_n_coords - dims)
+
+    if len(redundant_coords) > 0: 
+        ds = ds.drop(redundant_coords)
+        ds = add_netcdf_hist(ds, f"dropped redundant coordinates {redundant_coords}")
+    return ds
+
+
+def add_netcdf_hist(ds, msg, key='processing'):
+    from pandas import Timestamp
+
+    now = Timestamp.today().strftime('%Y-%m-%dT%H:%M')
+    prefix = f'\n[R2O] '
+    msg = prefix + msg
+    if key not in ds.attrs:
+        ds.attrs[key] = msg[1:]
+    elif ds.attrs[key] == '':
+        ds.attrs[key] = msg[1:]
+    else:
+        ds.attrs[key] += '; ' + msg
+
+    return ds
+
+
+######################
+## HELPER FUNCTIONS ## 
+######################
 def return_original_if_failed(func):
     """
     A helper function that will return the original input
