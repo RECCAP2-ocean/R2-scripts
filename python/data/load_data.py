@@ -168,10 +168,7 @@ def conform_dataset(
     Also adds the name of the model
     """
     
-    if name := ds.encoding.get('source', None):
-        fname = get_reccap_model_name_from_file_name(name)
-    else:
-        fname = ''
+    name = get_reccap_model_name_from_file_name(ds.encoding['source'])
     
     ds_out = (
         ds
@@ -182,8 +179,6 @@ def conform_dataset(
         .pipe(correct_depth)
         .pipe(transpose_dims, default=default_dim_order)
         .pipe(decode_times)
-        .pipe(get_array_if_only_var)
-        .assign_attrs(model=fname, fname=fname)
         .pipe(valid_values)
     )
     if return_single_var:
@@ -198,7 +193,7 @@ def conform_dataset(
             .to_dataset()
             .pipe(drop_redundant_coords))
     
-    ds_out = ds_out.assign_attrs(model=fname)
+    ds_out = ds_out.assign_attrs(model=name)
     ds_out.encoding = ds.encoding
     
     return ds_out
@@ -492,11 +487,15 @@ def valid_values(ds):
     """catches bad fill values"""
     
     must_mask = False
-    for key in ds.data_vars:
-        if ds[key].dtype == np.float_:
-            if ds[key].max() > 1e34:
-                must_mask = True
-                break
+    if isinstance(ds, xr.Dataset):
+        for key in ds.data_vars:
+            if ds[key].dtype == np.float_:
+                if ds[key].max() > 1e34:
+                    must_mask = True
+                    break
+    else:
+        if ds.max() > 1e34:
+            must_mask = True
     
     if must_mask:
         ds = ds.where(lambda x: x < 1e34)
@@ -714,13 +713,10 @@ def get_array_if_only_var(ds, keep_attr_name='processing'):
     If a variable name is in the file name, then only that variable will be 
     returned. An xr.DataArray is returned (not a Dataset)
     """
-
-    fpath = ds.encoding.get('source', None)
-    if fpath is not None:
-        fname = fpath.split('/')[-1]
-    else:
+    if isinstance(ds, xr.DataArray):
         return ds
-
+    fpath = ds.encoding.get('source', '')
+    fname = fpath.split('/')[-1]
     
     # keep history
     if keep_attr_name in ds.attrs:
