@@ -166,7 +166,10 @@ def conform_dataset(
     Also adds the name of the model
     """
     
-    name = get_reccap_model_name_from_file_name(ds.encoding['source'])
+    if name := ds.encoding.get('source', None):
+        fname = get_reccap_model_name_from_file_name(name)
+    else:
+        fname = ''
     
     ds_out = (
         ds
@@ -178,7 +181,7 @@ def conform_dataset(
         .pipe(transpose_dims, default=default_dim_order)
         .pipe(decode_times)
         .pipe(get_array_if_only_var)
-        .assign_attrs(model=name, fname=ds.encoding['source'])
+        .assign_attrs(model=fname, fname=fname)
     )
 
     if isinstance(ds_out, xr.DataArray):
@@ -187,7 +190,7 @@ def conform_dataset(
             .to_dataset()
             .pipe(drop_redundant_coords))
     
-    ds_out = ds_out.assign_attrs(model=name)
+    ds_out = ds_out.assign_attrs(model=fname)
     ds_out.encoding = ds.encoding
     
     return ds_out
@@ -685,8 +688,13 @@ def get_array_if_only_var(ds, keep_attr_name='processing'):
     If a variable name is in the file name, then only that variable will be 
     returned. An xr.DataArray is returned (not a Dataset)
     """
-    fpath = ds.encoding['source']
-    fname = fpath.split('/')[-1]
+
+    fpath = ds.encoding.get('source', None)
+    if fpath is not None:
+        fname = fpath.split('/')[-1]
+    else:
+        return ds
+
     
     if keep_attr_name in ds.attrs:
         hist = ds.attrs[keep_attr_name]
