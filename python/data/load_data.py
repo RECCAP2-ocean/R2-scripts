@@ -179,6 +179,7 @@ def conform_dataset(
         .pipe(correct_depth)
         .pipe(transpose_dims, default=default_dim_order)
         .pipe(decode_times)
+        .pipe(valid_values)
     )
     if return_single_var:
         ds_out = (
@@ -479,6 +480,24 @@ def correct_depth(ds):
         if ds.depth.attrs.get('units', '') == 'centimeters':
             ds = ds.assign_coords(depth=ds.depth / 100)
            
+    return ds
+
+
+def valid_values(ds):
+    """catches bad fill values"""
+    
+    must_mask = False
+    for key in ds.data_vars:
+        if ds[key].dtype == np.float_:
+            if ds[key].max() > 1e34:
+                must_mask = True
+                break
+    
+    if must_mask:
+        ds = ds.where(lambda x: x < 1e34)
+        msg = 'masked values greater than 1e34'
+        ds = add_netcdf_hist(ds, msg)
+        
     return ds
 
 
