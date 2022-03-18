@@ -65,7 +65,7 @@ def get_fnames_recursive_search(basedir, include=[], exclude=[]):
     return flist
 
 
-def open_reccap2_ocean_data(flist, time_lim=slice('1980', '2018'), load_data=True):
+def open_reccap2_ocean_data(flist, time_lim=slice('1980', '2018'), rename_var_to_model=None, load_data=True):
     """
     Open RECCAP2-ocean data as a merged netCDF file. 
     Can be used to open a multiple variables from a single model, 
@@ -89,10 +89,11 @@ def open_reccap2_ocean_data(flist, time_lim=slice('1980', '2018'), load_data=Tru
         return ds
 
     model_names = set([get_reccap_model_name_from_file_name(f) for f in flist])
-    if len(model_names) == 1:
-        rename_var_to_model = False
-    else:
-        rename_var_to_model = True
+    if rename_var_to_model is None:
+        if len(model_names) == 1:
+            rename_var_to_model = False
+        else:
+            rename_var_to_model = True
 
     data = []
     for f in flist:
@@ -159,6 +160,7 @@ def get_reccap_model_name_from_file_name(fname):
 def conform_dataset(
     ds,
     default_dim_order=['time', 'depth', 'lat', 'lon'],
+    return_single_var=True,
 ):
     """
     Conforms the dataset to the reccap standard (a wrapper for other functions)
@@ -177,9 +179,12 @@ def conform_dataset(
         .pipe(correct_depth)
         .pipe(transpose_dims, default=default_dim_order)
         .pipe(decode_times)
-        .pipe(get_array_if_only_var)
-        .assign_attrs(model=name, fname=ds.encoding['source'])
     )
+    if return_single_var:
+        ds_out = (
+            ds_out
+            .pipe(get_array_if_only_var)
+            .assign_attrs(model=name, fname=ds.encoding['source']))
 
     if isinstance(ds_out, xr.DataArray):
         ds_out = (
@@ -685,9 +690,12 @@ def get_array_if_only_var(ds, keep_attr_name='processing'):
     If a variable name is in the file name, then only that variable will be 
     returned. An xr.DataArray is returned (not a Dataset)
     """
-    fpath = ds.encoding['source']
+    if isinstance(ds, xr.DataArray):
+        return ds
+    fpath = ds.encoding.get('source', '')
     fname = fpath.split('/')[-1]
     
+    # keep history
     if keep_attr_name in ds.attrs:
         hist = ds.attrs[keep_attr_name]
     else: 
@@ -695,6 +703,7 @@ def get_array_if_only_var(ds, keep_attr_name='processing'):
 
     data_vars = list(ds.data_vars)
     n_vars = len(data_vars)
+    
     # if more than one data variable, return the variable that 
     # occurs in the file name
     if n_vars != 1:  
@@ -705,6 +714,7 @@ def get_array_if_only_var(ds, keep_attr_name='processing'):
     if n_vars == 1:
         ds = ds[data_vars[0]]
     
+    # this is for maintaining processing
     if hist is not None:
         if isinstance(ds, xr.Dataset):
             if len(ds.data_vars) == 1:
