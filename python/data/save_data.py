@@ -6,7 +6,7 @@ import xarray as xr
 @xr.register_dataset_accessor("to_netcdf_with_compression")
 class Save(object):
     def __init__(self, xarray_obj):
-        self._obj = self
+        self._obj = xarray_obj
 
     def __call__(self, sname, overwrite=False, compression='int16', **kwargs):
         """
@@ -28,7 +28,8 @@ class Save(object):
         
         Returns
         -------
-        None
+        sname : str
+            The savename of the saved file
         """
         import os
 
@@ -36,7 +37,8 @@ class Save(object):
 
         # function will return an error if the file exists and overwrite is False
         if os.path.exists(sname) and not overwrite:
-            raise ValueError('File already exists')
+            print(f'File already exists: {sname}')
+            return sname
 
         if compression == 'int16':
             encoding = get_dataset_compression_encoding(ds)
@@ -46,7 +48,8 @@ class Save(object):
             encoding = {k: {} for k in ds}
         
         ds.to_netcdf(sname, encoding=encoding, **kwargs)
-
+        return sname
+    
 
 def save_dataset_with_compression(ds, sname, max_percentile=99.999):
     """
