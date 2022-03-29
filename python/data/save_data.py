@@ -1,3 +1,53 @@
+from pkgutil import get_data
+from functools import wraps
+import xarray as xr
+
+
+@xr.register_dataset_accessor("to_netcdf_with_compression")
+class Save(object):
+    def __init__(self, xarray_obj):
+        self._obj = self
+
+    def __call__(self, sname, overwrite=False, compression='int16', **kwargs):
+        """
+        Save data to a netCDF file with compression.
+
+        Parameters
+        ----------
+        sname : str
+            Name of the file to save to.
+        overwrite : bool [False]
+            Overwrite the file if it already exists.
+        compression : str [int16]
+            The type of compression to use. Options are 
+                - `int16` (lossy)
+                - `zip` (lossless)
+                - `none` (no compression)
+        **kwargs : dict
+            Additional keyword arguments to pass to `xarray.Dataset.to_netcdf`.
+        
+        Returns
+        -------
+        None
+        """
+        import os
+
+        ds = self._obj
+
+        # function will return an error if the file exists and overwrite is False
+        if os.path.exists(sname) and not overwrite:
+            raise ValueError('File already exists')
+
+        if compression == 'int16':
+            encoding = get_dataset_compression_encoding(ds)
+        elif compression == 'zip':
+            encoding = {k: {'complevel': 4, 'zlib': True} for k in ds}
+        else:
+            encoding = {k: {} for k in ds}
+        
+        ds.to_netcdf(sname, encoding=encoding, **kwargs)
+
+
 def save_dataset_with_compression(ds, sname, max_percentile=99.999):
     """
     Save a dataset with lossy compression. 
