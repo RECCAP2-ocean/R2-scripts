@@ -1,15 +1,16 @@
 
 def get_reccap2ocean_regions(
     url='https://github.com/RECCAP2-ocean/R2-shared-resources/raw/master/data/regions/RECCAP2_region_masks_all_v20210412.nc',
-    dest='../data/regions/',
+    dest='~/Downloads/reccap2_regions/',
 ):
     """
     Downloads the latetst RECCAP2 ocean masks and returns as an xarray.Dataset
     """
     from . download import download
     from xarray import open_dataset
+    from os.path import expanduser
     
-    fname = download(url, path=dest)
+    fname = download(url, path=expanduser(dest))
     ds = open_dataset(fname)
     
     return ds
