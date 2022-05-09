@@ -62,5 +62,5 @@ def download(url, path='.', fname=None, progress=True, decompress=True, **kwargs
     if isinstance(flist, list):
         if len(flist) == 1:
             return flist[0]
-    else:
-        return flist
+
+    return flist

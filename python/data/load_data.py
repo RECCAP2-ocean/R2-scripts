@@ -133,7 +133,7 @@ def open_reccap2_ocean_data(flist, time_lim=slice('1980', '2018'), rename_var_to
         return data
 
 
-def get_reccap_model_name_from_file_name(fname):
+def get_reccap_model_name_from_file_name(fname, model_name_pos=1):
     """
     Uses the file name to guess the RECCAP2 product name
     """
@@ -149,7 +149,7 @@ def get_reccap_model_name_from_file_name(fname):
         .replace('LDEO_HPD', 'LDEO-HPD')
         .replace('_REcoM_', '-REcoM-')
         # get the second entry after the underscore (model name)
-        .split('_')[1]
+        .split('_')[model_name_pos]
         # replace [-.] with _ and
         .replace('-', '_')
         .replace('.', '_'))
